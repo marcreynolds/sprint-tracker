@@ -41,3 +41,12 @@ authenticated GitHub CLI (`gh auth login`). It builds the DMG, creates and
 pushes a `v0.1.0` tag, then publishes the DMG as a GitHub release with generated
 release notes. The DMG contains `Sprint Tracker.app` and an `Applications`
 shortcut for drag-to-install.
+
+To retag the current commit and replace the matching uploaded DMG, use:
+
+```bash
+./release-dmg.sh 0.2.0 --force
+```
+
+This force-pushes the existing version tag, so use it only to correct a release
+that has not yet been distributed.

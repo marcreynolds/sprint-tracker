@@ -42,7 +42,7 @@ git tag -a "$TAG" -m "${APP_NAME} ${TAG}"
 git push origin HEAD
 git push origin "$TAG"
 
-gh release create "$TAG" "$DMG_PATH#${APP_NAME} ${VERSION}" \
+gh release create "$TAG" "$DMG_PATH" \
   --verify-tag \
   --title "${APP_NAME} ${TAG}" \
   --generate-notes

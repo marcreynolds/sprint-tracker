@@ -254,7 +254,7 @@ struct TrackerView: View {
     .background(Color(nsColor: .controlBackgroundColor))
     .animation(.easeInOut(duration: 0.25), value: settings.autoAdvanceNotice)
     .onAppear { dismissAutoAdvanceNotice() }
-    .onChange(of: settings.autoAdvanceNotice) { _ in dismissAutoAdvanceNotice() }
+    .onChange(of: settings.autoAdvanceNotice) { dismissAutoAdvanceNotice() }
   }
 
   private func dismissAutoAdvanceNotice() {

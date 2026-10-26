@@ -10,9 +10,10 @@ struct SprintTrackerApp: App {
     WindowGroup("Sprint Tracker") {
       TrackerView()
         .environmentObject(settings)
-        .frame(minWidth: 550)
         .onAppear { appDelegate.makeFloating() }
     }
+    .windowResizability(.contentMinSize)
+
     Settings {
       SettingsView()
         .environmentObject(settings)
@@ -24,6 +25,12 @@ struct SprintTrackerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private let frameKey = "sprint-tracker.main-window-frame"
   private weak var mainWindow: NSWindow?
+
+  func applicationWillFinishLaunching(_ notification: Notification) {
+    guard let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+          let icon = NSImage(contentsOf: iconURL) else { return }
+    NSApp.applicationIconImage = icon
+  }
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
@@ -41,7 +48,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       window.styleMask.insert(.fullSizeContentView)
       window.styleMask.remove(.titled)
       window.styleMask.insert(.resizable)
-      window.minSize = NSSize(width: 400, height: 32)
 
       NotificationCenter.default.addObserver(self,
                                              selector: #selector(self.saveWindowFrame),
@@ -80,10 +86,11 @@ final class TrackerSettings: ObservableObject {
     var upcomingEmoji = "◻️"
     var offsiteEmoji = "✈️"
     var textSize: Double = 20
+    var wrapIndicators = false
 
     enum CodingKeys: String, CodingKey {
       case fiscalYear, quarter, currentWeek, completeEmoji, currentEmoji
-      case upcomingEmoji, offsiteEmoji, textSize
+      case upcomingEmoji, offsiteEmoji, textSize, wrapIndicators
     }
 
     init() {}
@@ -98,6 +105,7 @@ final class TrackerSettings: ObservableObject {
       upcomingEmoji = try values.decodeIfPresent(String.self, forKey: .upcomingEmoji) ?? "◻️"
       offsiteEmoji = try values.decodeIfPresent(String.self, forKey: .offsiteEmoji) ?? "✈️"
       textSize = try values.decodeIfPresent(Double.self, forKey: .textSize) ?? 20
+      wrapIndicators = try values.decodeIfPresent(Bool.self, forKey: .wrapIndicators) ?? false
     }
   }
 
@@ -134,42 +142,70 @@ final class TrackerSettings: ObservableObject {
 struct TrackerView: View {
   @EnvironmentObject private var settings: TrackerSettings
   var body: some View {
-    HStack(spacing: 14) {
+    HStack(spacing: 14 * scale) {
       reservedLabel("FY3000 Q4", value: "FY\(settings.data.fiscalYear) Q\(settings.data.quarter)",
                     size: settings.data.textSize + 2, weight: .semibold)
       reservedLabel("Week 12 of 12", value: sprintLabel,
                     size: settings.data.textSize, weight: .medium)
 
-      HStack(spacing: 4) {
-        ForEach(1...12, id: \.self) { week in
-          Text(emoji(for: week))
-            .font(.system(size: settings.data.textSize + 7))
-            .accessibilityLabel("Week \(week)")
-        }
-        Text(settings.data.offsiteEmoji)
-          .font(.system(size: settings.data.textSize + 7))
-          .padding(.leading, 2)
-          .help(offsiteHelp)
-          .accessibilityLabel(offsiteHelp)
-      }
+      indicatorView
 
       Spacer(minLength: 0)
 
-      HStack(spacing: 8) {
+      HStack(spacing: 8 * scale) {
         TrackerArrowButton(icon: "chevron.left", help: "Previous week",
+                           size: 28 * scale,
                            isDisabled: settings.data.currentWeek == 1) {
           settings.advanceWeek(-1)
         }
         TrackerArrowButton(icon: "chevron.right", help: "Next week / offsite",
+                           size: 28 * scale,
                            isDisabled: settings.data.currentWeek == 13) {
           settings.advanceWeek(1)
         }
       }
       .font(.system(size: settings.data.textSize - 2, weight: .bold))
     }
-    .padding(.horizontal, 22)
-    .padding(.vertical, 4)
+    .padding(.horizontal, 22 * scale)
+    .padding(.vertical, 4 * scale)
     .background(Color(nsColor: .controlBackgroundColor))
+  }
+
+  @ViewBuilder
+  private var indicatorView: some View {
+    if settings.data.wrapIndicators {
+      VStack(alignment: .leading, spacing: 3 * scale) {
+        indicatorRow(1...6, includesOffsite: false)
+        indicatorRow(7...12, includesOffsite: true)
+      }
+    } else {
+      indicatorRow(1...12, includesOffsite: true)
+    }
+  }
+
+  private func indicatorRow(_ weeks: ClosedRange<Int>, includesOffsite: Bool) -> some View {
+    HStack(spacing: 4 * scale) {
+      ForEach(weeks, id: \.self) { week in
+        Text(emoji(for: week))
+          .font(.system(size: emojiSize))
+          .accessibilityLabel("Week \(week)")
+      }
+      if includesOffsite {
+        Text(settings.data.offsiteEmoji)
+          .font(.system(size: emojiSize))
+          .padding(.leading, 2 * scale)
+          .help(offsiteHelp)
+          .accessibilityLabel(offsiteHelp)
+      }
+    }
+  }
+
+  private var scale: CGFloat {
+    CGFloat(settings.data.textSize / 20)
+  }
+
+  private var emojiSize: CGFloat {
+    27 * scale
   }
 
   private func reservedLabel(_ longest: String, value: String, size: Double,
@@ -204,6 +240,7 @@ struct TrackerView: View {
 struct TrackerArrowButton: View {
   let icon: String
   let help: String
+  let size: CGFloat
   let isDisabled: Bool
   let action: () -> Void
   @State private var isHovering = false
@@ -211,10 +248,10 @@ struct TrackerArrowButton: View {
   var body: some View {
     Button(action: action) {
       Image(systemName: icon)
-        .frame(width: 28, height: 28)
+        .frame(width: size, height: size)
         .contentShape(Rectangle())
         .background {
-          RoundedRectangle(cornerRadius: 6)
+          RoundedRectangle(cornerRadius: 6 * size / 28)
             .fill(isHovering && !isDisabled ? Color.accentColor.opacity(0.24) : .clear)
         }
     }
@@ -257,9 +294,10 @@ struct SettingsView: View {
                     value: $settings.data.currentWeek, in: 1...13)
             HStack {
               Text("Main text size: \(Int(settings.data.textSize))")
-              Slider(value: $settings.data.textSize, in: 12...32, step: 1)
+              Slider(value: $settings.data.textSize, in: 8...32, step: 1)
                 .frame(width: 170)
             }
+            Toggle("Wrap sprint indicators to two lines", isOn: $settings.data.wrapIndicators)
             Text("Twelve sprint weeks, then the offsite.")
               .font(.caption)
               .foregroundStyle(.secondary)

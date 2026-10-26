@@ -87,10 +87,13 @@ final class TrackerSettings: ObservableObject {
     var offsiteEmoji = "✈️"
     var textSize: Double = 20
     var wrapIndicators = false
+    var autoAdvanceOnMondays = false
+    var lastAutoAdvanceMonday: Date?
 
     enum CodingKeys: String, CodingKey {
       case fiscalYear, quarter, currentWeek, completeEmoji, currentEmoji
       case upcomingEmoji, offsiteEmoji, textSize, wrapIndicators
+      case autoAdvanceOnMondays, lastAutoAdvanceMonday
     }
 
     init() {}
@@ -106,11 +109,18 @@ final class TrackerSettings: ObservableObject {
       offsiteEmoji = try values.decodeIfPresent(String.self, forKey: .offsiteEmoji) ?? "✈️"
       textSize = try values.decodeIfPresent(Double.self, forKey: .textSize) ?? 20
       wrapIndicators = try values.decodeIfPresent(Bool.self, forKey: .wrapIndicators) ?? false
+      autoAdvanceOnMondays = try values.decodeIfPresent(Bool.self,
+                                                        forKey: .autoAdvanceOnMondays) ?? false
+      lastAutoAdvanceMonday = try values.decodeIfPresent(Date.self,
+                                                         forKey: .lastAutoAdvanceMonday)
     }
   }
 
   @Published var data: Stored { didSet { save() } }
+  @Published var autoAdvanceNotice: String?
   private let key = "sprint-tracker.settings"
+  private var autoAdvanceTimer: Timer?
+  private let calendar = Calendar.current
 
   init() {
     if let raw = UserDefaults.standard.data(forKey: key),
@@ -119,6 +129,38 @@ final class TrackerSettings: ObservableObject {
     } else {
       data = Stored()
     }
+    applyAutomaticAdvances()
+    startAutoAdvanceTimer()
+  }
+
+  func setAutoAdvance(_ enabled: Bool) {
+    data.autoAdvanceOnMondays = enabled
+    data.lastAutoAdvanceMonday = enabled ? monday(containing: Date()) : nil
+  }
+
+  func applyAutomaticAdvances(now: Date = Date()) {
+    guard data.autoAdvanceOnMondays else { return }
+    let currentMonday = monday(containing: now)
+    guard let lastMonday = data.lastAutoAdvanceMonday else {
+      data.lastAutoAdvanceMonday = currentMonday
+      return
+    }
+
+    let elapsedDays = calendar.dateComponents([.day], from: lastMonday,
+                                              to: currentMonday).day ?? 0
+    let weeksToAdvance = elapsedDays / 7
+    guard weeksToAdvance > 0 else { return }
+    let priorWeek = data.currentWeek
+    data.currentWeek = min(data.currentWeek + weeksToAdvance, 13)
+    data.lastAutoAdvanceMonday = currentMonday
+    announceAutoAdvance(data.currentWeek - priorWeek)
+  }
+
+  func simulateAutomaticAdvance() {
+    guard data.currentWeek < 13 else { return }
+    data.currentWeek += 1
+    data.lastAutoAdvanceMonday = monday(containing: Date())
+    announceAutoAdvance(1)
   }
 
   func advanceWeek(_ amount: Int) {
@@ -131,6 +173,29 @@ final class TrackerSettings: ObservableObject {
     if q < 1 { q = 4; data.fiscalYear -= 1 }
     data.quarter = q
     data.currentWeek = 1
+    if data.autoAdvanceOnMondays {
+      data.lastAutoAdvanceMonday = monday(containing: Date())
+    }
+  }
+
+  private func announceAutoAdvance(_ advancedBy: Int) {
+    guard advancedBy > 0 else { return }
+    let destination = data.currentWeek == 13 ? "Offsite" : "Week \(data.currentWeek)"
+    let count = advancedBy == 1 ? "one week" : "\(advancedBy) weeks"
+    autoAdvanceNotice = "Auto-advanced \(count) to \(destination)"
+  }
+
+  private func monday(containing date: Date) -> Date {
+    let day = calendar.startOfDay(for: date)
+    let weekday = calendar.component(.weekday, from: day)
+    let daysSinceMonday = (weekday + 5) % 7
+    return calendar.date(byAdding: .day, value: -daysSinceMonday, to: day) ?? day
+  }
+
+  private func startAutoAdvanceTimer() {
+    autoAdvanceTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) {
+      [weak self] _ in self?.applyAutomaticAdvances()
+    }
   }
 
   private func save() {
@@ -141,6 +206,8 @@ final class TrackerSettings: ObservableObject {
 
 struct TrackerView: View {
   @EnvironmentObject private var settings: TrackerSettings
+  @State private var noticeDismissal: DispatchWorkItem?
+
   var body: some View {
     HStack(spacing: 14 * scale) {
       reservedLabel("FY3000 Q4", value: "FY\(settings.data.fiscalYear) Q\(settings.data.quarter)",
@@ -149,6 +216,22 @@ struct TrackerView: View {
                     size: settings.data.textSize, weight: .medium)
 
       indicatorView
+        .overlay {
+          if let notice = settings.autoAdvanceNotice {
+            Text(notice)
+              .font(.system(size: max(10, settings.data.textSize * 0.62), weight: .semibold))
+              .foregroundStyle(.primary)
+              .padding(.horizontal, 8 * scale)
+              .padding(.vertical, 4 * scale)
+              .background(.regularMaterial, in: Capsule())
+              .overlay {
+                Capsule().stroke(Color.accentColor.opacity(0.55), lineWidth: 1)
+              }
+              .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+              .transition(.opacity.combined(with: .scale(scale: 0.9)))
+              .accessibilityLabel(notice)
+          }
+        }
 
       Spacer(minLength: 0)
 
@@ -169,6 +252,17 @@ struct TrackerView: View {
     .padding(.horizontal, 22 * scale)
     .padding(.vertical, 4 * scale)
     .background(Color(nsColor: .controlBackgroundColor))
+    .animation(.easeInOut(duration: 0.25), value: settings.autoAdvanceNotice)
+    .onAppear { dismissAutoAdvanceNotice() }
+    .onChange(of: settings.autoAdvanceNotice) { _ in dismissAutoAdvanceNotice() }
+  }
+
+  private func dismissAutoAdvanceNotice() {
+    noticeDismissal?.cancel()
+    guard settings.autoAdvanceNotice != nil else { return }
+    let dismissal = DispatchWorkItem { settings.autoAdvanceNotice = nil }
+    noticeDismissal = dismissal
+    DispatchQueue.main.asyncAfter(deadline: .now() + 7, execute: dismissal)
   }
 
   @ViewBuilder
@@ -302,6 +396,26 @@ struct SettingsView: View {
               .font(.caption)
               .foregroundStyle(.secondary)
               .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(6)
+        }
+
+        GroupBox("Automation") {
+          VStack(alignment: .leading, spacing: 8) {
+            Toggle("Advance automatically every Monday", isOn: Binding(
+              get: { settings.data.autoAdvanceOnMondays },
+              set: { settings.setAutoAdvance($0) }
+            ))
+            Text("Uses your Mac's local time. If the app was closed on Monday, it catches up the next time it opens.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Button("Simulate a Monday advance") {
+              settings.simulateAutomaticAdvance()
+            }
+            .disabled(!settings.data.autoAdvanceOnMondays || settings.data.currentWeek == 13)
+            Text("This advances one position and shows the notification. Use the left arrow to undo it.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
           }
           .padding(6)
         }

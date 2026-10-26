@@ -29,3 +29,15 @@ Xcode Command Line Tools and macOS 13+ are required:
 ./build-app.sh
 open "Sprint Tracker.app"
 ```
+
+## Build and publish a release
+
+```bash
+./release-dmg.sh 0.1.0
+```
+
+The script requires a clean Git working tree, an `origin` remote, and an
+authenticated GitHub CLI (`gh auth login`). It builds the DMG, creates and
+pushes a `v0.1.0` tag, then publishes the DMG as a GitHub release with generated
+release notes. The DMG contains `Sprint Tracker.app` and an `Applications`
+shortcut for drag-to-install.

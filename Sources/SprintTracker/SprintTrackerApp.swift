@@ -206,6 +206,7 @@ final class TrackerSettings: ObservableObject {
 
 struct TrackerView: View {
   @EnvironmentObject private var settings: TrackerSettings
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var noticeDismissal: DispatchWorkItem?
 
   var body: some View {
@@ -285,12 +286,25 @@ struct TrackerView: View {
           .accessibilityLabel("Week \(week)")
       }
       if includesOffsite {
-        Text(settings.data.offsiteEmoji)
-          .font(.system(size: emojiSize))
+        offsiteIndicator
           .padding(.leading, 2 * scale)
           .help(offsiteHelp)
           .accessibilityLabel(offsiteHelp)
       }
+    }
+  }
+
+  private var offsiteIndicator: some View {
+    TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                            paused: settings.data.currentWeek != 13 || reduceMotion)) {
+      context in
+      let phase = sin(context.date.timeIntervalSinceReferenceDate * .pi * 2 / 1.8)
+      let animationAmount = settings.data.currentWeek == 13 && !reduceMotion ? phase : 0
+      Text(settings.data.offsiteEmoji)
+        .font(.system(size: emojiSize))
+        .scaleEffect(1 + max(animationAmount, 0) * 0.08)
+        .rotationEffect(.degrees(animationAmount * 7))
+        .offset(y: -max(animationAmount, 0) * 3 * scale)
     }
   }
 

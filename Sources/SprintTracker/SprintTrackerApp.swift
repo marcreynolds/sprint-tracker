@@ -163,7 +163,17 @@ final class TrackerSettings: ObservableObject {
     announceAutoAdvance(1)
   }
 
-  func advanceWeek(_ amount: Int) {
+  func advancePosition(_ amount: Int) {
+    guard amount != 0 else { return }
+    if amount > 0 && data.currentWeek == 13 {
+      advanceQuarter(1)
+      return
+    }
+    if amount < 0 && data.currentWeek == 1 {
+      advanceQuarter(-1)
+      data.currentWeek = 13
+      return
+    }
     data.currentWeek = min(max(data.currentWeek + amount, 1), 13)
   }
 
@@ -237,15 +247,15 @@ struct TrackerView: View {
       Spacer(minLength: 0)
 
       HStack(spacing: 8 * scale) {
-        TrackerArrowButton(icon: "chevron.left", help: "Previous week",
+        TrackerArrowButton(icon: "chevron.left", help: "Previous week / quarter",
                            size: 28 * scale,
-                           isDisabled: settings.data.currentWeek == 1) {
-          settings.advanceWeek(-1)
+                           isDisabled: false) {
+          settings.advancePosition(-1)
         }
-        TrackerArrowButton(icon: "chevron.right", help: "Next week / offsite",
+        TrackerArrowButton(icon: "chevron.right", help: "Next week / quarter",
                            size: 28 * scale,
-                           isDisabled: settings.data.currentWeek == 13) {
-          settings.advanceWeek(1)
+                           isDisabled: false) {
+          settings.advancePosition(1)
         }
       }
       .font(.system(size: settings.data.textSize - 2, weight: .bold))
